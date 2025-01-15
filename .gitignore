@@ -1,0 +1,40 @@
+cat > .gitignore << EOF
+# Dependencies
+node_modules/
+.env
+
+# Build
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Terraform (if you use it later)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+.temp/
+EOF

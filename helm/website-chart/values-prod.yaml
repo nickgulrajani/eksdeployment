@@ -1,0 +1,25 @@
+replicaCount: 2
+
+image:
+  repository: your-account.dkr.ecr.region.amazonaws.com/website
+  tag: latest
+  pullPolicy: Always
+
+service:
+  type: LoadBalancer
+  port: 80
+
+ingress:
+  enabled: true
+  className: "alb"
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
