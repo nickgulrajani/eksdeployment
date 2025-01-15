@@ -1,20 +1,13 @@
 replicaCount: 2
 
 image:
-  repository: your-account.dkr.ecr.region.amazonaws.com/website
+  repository: 045940814242.dkr.ecr.us-west-2.amazonaws.com/demo-app
   tag: latest
   pullPolicy: Always
 
 service:
   type: LoadBalancer
   port: 80
-
-ingress:
-  enabled: true
-  className: "alb"
-  annotations:
-    kubernetes.io/ingress.class: alb
-    alb.ingress.kubernetes.io/scheme: internet-facing
 
 resources:
   limits:
