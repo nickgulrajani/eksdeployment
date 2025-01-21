@@ -1,4 +1,4 @@
-name: Helm Deployment Demo
+name: Helm Deployment Demo UC
 on:
   push:
     branches: [ main ]
