@@ -1,0 +1,92 @@
+name: Deploy to EKS
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'website/**'
+      - 'helm/**'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'website/**'
+      - 'helm/**'
+      - '.github/workflows/**'
+
+env:
+  AWS_REGION: us-west-2
+  ECR_REPOSITORY: demo-app
+  EKS_CLUSTER: demo-eks-cluster
+
+jobs:
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build and push image to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        cd website
+        docker buildx create --use
+        docker buildx build \
+          --platform linux/amd64 \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+          --push .
+
+    - name: Install Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: v3.12.0
+
+    - name: Update kubeconfig
+      run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+    - name: Deploy to EKS with Helm
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        helm lint helm/website-chart
+        
+        if ! helm upgrade --install demo-app helm/website-chart \
+          --namespace default \
+          --set image.repository=$ECR_REGISTRY/$ECR_REPOSITORY \
+          --set image.tag=$IMAGE_TAG \
+          --wait \
+          --timeout 5m; then
+          echo "Deployment failed, rolling back..."
+          helm rollback demo-app
+          exit 1
+        fi
+
+    - name: Verify deployment
+      run: |
+        kubectl wait --for=condition=ready pod -l app=website --timeout=2m
+        kubectl get pods -l app=website -o wide
+        for pod in $(kubectl get pods -l app=website -o name); do
+          echo "Logs for $pod:"
+          kubectl logs $pod --tail=50
+        done
+
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "Deployment failed. Check the logs above for details."

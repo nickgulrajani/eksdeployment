@@ -1,12 +1,6 @@
-name: Deploy to EKS
+name: Helm Deployment Demo
 on:
   push:
-    branches: [ main ]
-    paths:
-      - 'website/**'
-      - 'helm/**'
-      - '.github/workflows/**'
-  pull_request:
     branches: [ main ]
     paths:
       - 'website/**'
@@ -19,8 +13,8 @@ env:
   EKS_CLUSTER: demo-eks-cluster
 
 jobs:
-  deploy:
-    name: Build and Deploy
+  helm-demo:
+    name: Helm Deployment Demo
     runs-on: ubuntu-latest
     
     steps:
@@ -59,34 +53,104 @@ jobs:
     - name: Update kubeconfig
       run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
 
-    - name: Deploy to EKS with Helm
+    - name: Demo 1 - Show Current Helm State
+      run: |
+        echo "🔍 Current Helm Releases:"
+        helm list -A
+        echo "📊 Current Values for demo-app:"
+        helm get values demo-app
+
+    - name: Demo 2 - Deploy with Different Values
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        helm lint helm/website-chart
+        echo "🚀 Deploying with new configuration..."
+        # Create values file with new settings
+        cat <<EOF > production-values.yaml
+        replicaCount: 3
+        image:
+          repository: $ECR_REGISTRY/$ECR_REPOSITORY
+          tag: $IMAGE_TAG
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "250m"
+            memory: "256Mi"
+        EOF
         
-        if ! helm upgrade --install demo-app helm/website-chart \
-          --namespace default \
-          --set image.repository=$ECR_REGISTRY/$ECR_REPOSITORY \
-          --set image.tag=$IMAGE_TAG \
-          --wait \
-          --timeout 5m; then
-          echo "Deployment failed, rolling back..."
-          helm rollback demo-app
-          exit 1
-        fi
+        echo "📝 Generated values file:"
+        cat production-values.yaml
+        
+        echo "⚡ Upgrading Helm release..."
+        helm upgrade demo-app helm/website-chart -f production-values.yaml --wait
 
-    - name: Verify deployment
+    - name: Demo 3 - Show Deployment History
       run: |
+        echo "📜 Helm Release History:"
+        helm history demo-app
+        
+        echo "🔍 Current Deployment Status:"
+        kubectl get deployments,pods,services -l app=website
+
+    - name: Demo 4 - Package Chart
+      run: |
+        echo "📦 Packaging Helm Chart..."
+        helm package helm/website-chart
+        
+        echo "📋 Chart Details:"
+        helm show chart helm/website-chart
+
+    - name: Demo 5 - Rollback Simulation
+      if: github.event_name == 'pull_request'
+      run: |
+        echo "⏮️ Simulating rollback..."
+        helm rollback demo-app 1
+        
+        echo "✅ Post-rollback status:"
+        helm get values demo-app
+        kubectl get pods -l app=website
+
+    - name: Verify final state
+      run: |
+        echo "🎯 Final Deployment State:"
         kubectl wait --for=condition=ready pod -l app=website --timeout=2m
         kubectl get pods -l app=website -o wide
-        for pod in $(kubectl get pods -l app=website -o name); do
-          echo "Logs for $pod:"
-          kubectl logs $pod --tail=50
-        done
+        
+        echo "📊 Final Helm Values:"
+        helm get values demo-app
+        
+        echo "🔄 Deployment History:"
+        helm history demo-app
 
-    - name: Notify on failure
-      if: failure()
-      run: |
-        echo "Deployment failed. Check the logs above for details."
+    - name: Post results as comment
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const helmStatus = await exec.getExecOutput('helm', ['get', 'values', 'demo-app']);
+          const comment = `
+          ## 🚀 Helm Deployment Summary
+          
+          ### Current Values
+          \`\`\`yaml
+          ${helmStatus.stdout}
+          \`\`\`
+          
+          ### Deployment Status
+          - Release: demo-app
+          - Namespace: default
+          - Last Deployed: ${new Date().toISOString()}
+          
+          Check the Actions tab for full deployment details!
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
