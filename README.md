@@ -1,5 +1,7 @@
 # EKS Deployment Project
 
+https://github.com/nickgulrajani/eksdeployment
+
 This project demonstrates a complete CI/CD pipeline for deploying applications to Amazon EKS.
 
 ## Components
