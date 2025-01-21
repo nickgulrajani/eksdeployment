@@ -44,12 +44,9 @@ jobs:
         IMAGE_TAG: ${{ github.sha }}
       run: |
         cd website
-        # Add build caching
         docker buildx create --use
         docker buildx build \
           --platform linux/amd64 \
-          --cache-from type=registry,ref=$ECR_REGISTRY/$ECR_REPOSITORY:buildcache \
-          --cache-to type=registry,ref=$ECR_REGISTRY/$ECR_REPOSITORY:buildcache,mode=max \
           -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
           -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
           --push .
@@ -67,10 +64,8 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        # Validate chart before deploying
         helm lint helm/website-chart
         
-        # Deploy with rollback on failure
         if ! helm upgrade --install demo-app helm/website-chart \
           --namespace default \
           --set image.repository=$ECR_REGISTRY/$ECR_REPOSITORY \
@@ -84,10 +79,7 @@ jobs:
 
     - name: Verify deployment
       run: |
-        # Wait for pods to be ready
         kubectl wait --for=condition=ready pod -l app=website --timeout=2m
-        
-        # Get pod status and logs if available
         kubectl get pods -l app=website -o wide
         for pod in $(kubectl get pods -l app=website -o name); do
           echo "Logs for $pod:"
@@ -98,4 +90,3 @@ jobs:
       if: failure()
       run: |
         echo "Deployment failed. Check the logs above for details."
-        # Add your notification logic here (e.g., Slack, email)
